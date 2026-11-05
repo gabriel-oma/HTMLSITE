@@ -13,6 +13,7 @@
   <script defer src="https://unpkg.com/lucide@latest"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="app.js"></script>
+  <script type="module" src="auth.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -36,7 +37,7 @@
       </nav>
       <div class="sidebar-bottom">
         <div class="sync-card"><span class="sync-icon"><i data-lucide="cloud"></i></span><div><strong>Sua coleção</strong><small>Salva neste dispositivo</small></div><span class="status-dot"></span></div>
-        <div class="profile"><div class="avatar">ME</div><div class="profile-text"><strong>Meu perfil</strong><small>Plano pessoal</small></div><button class="icon-button profile-more" aria-label="Opções do perfil" type="button"><i data-lucide="ellipsis"></i></button></div>
+        <div class="profile"><div class="avatar" id="profileAvatar">ME</div><div class="profile-text"><strong id="profileName">Meu perfil</strong><small>Plano pessoal</small></div><button class="icon-button profile-more" id="profileMore" aria-label="Opções do perfil" type="button"><i data-lucide="ellipsis"></i></button><div class="profile-menu" id="profileMenu" hidden><button type="button" id="logoutButton"><i data-lucide="log-out"></i> Sair da conta</button></div></div>
       </div>
     </aside>
     <main class="main-area">
@@ -46,13 +47,30 @@
         <div class="top-actions">
           <label class="global-search"><i data-lucide="search"></i><input id="globalSearch" type="search" placeholder="Buscar filmes..." aria-label="Buscar filmes"><kbd>Ctrl K</kbd></label>
           <button class="icon-button notification-button" aria-label="Notificações" type="button"><i data-lucide="bell"></i><span></span></button>
-          <div class="top-avatar">ME</div>
+          <div class="top-avatar" id="topAvatar">ME</div>
         </div>
       </header>
       <div id="pageContent" class="page-content"></div>
       <footer class="footer"><span>Movie Explorer <span class="footer-dot">·</span> Seu cinema, organizado.</span><span class="demo-note"><span class="demo-dot"></span>Catálogo demonstrativo</span></footer>
     </main>
   </div>
+  <section class="auth-screen" id="authScreen" aria-label="Acesso ao Movie Explorer">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="auth-logo"><i data-lucide="clapperboard"></i></span><span>movie<span class="brand-light">explorer</span></span></div>
+      <p class="auth-eyebrow">SEU CINEMA, ORGANIZADO</p>
+      <h1 id="authTitle">Bem-vindo de volta</h1>
+      <p class="auth-subtitle" id="authSubtitle">Entre para acessar seu espaço de filmes.</p>
+      <form id="authForm" class="auth-form">
+        <label id="authNameField" hidden>Nome de usuário<input id="authName" type="text" autocomplete="name" minlength="2" maxlength="70" placeholder="Como podemos chamar você?"></label>
+        <label>E-mail<input id="authEmail" type="email" autocomplete="email" required placeholder="voce@exemplo.com"></label>
+        <label>Senha<input id="authPassword" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo de 6 caracteres"></label>
+        <p class="auth-message" id="authMessage" role="status" hidden></p>
+        <button class="auth-submit" type="submit" id="authSubmit">Entrar</button>
+      </form>
+      <button type="button" class="auth-toggle" id="authToggle">Ainda não tem conta? Criar conta</button>
+      <p class="auth-footnote">Sua sessão é protegida pelo Supabase Auth.</p>
+    </div>
+  </section>
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
   <dialog class="movie-dialog" id="movieDialog" aria-label="Detalhes do filme"><button class="dialog-close icon-button" id="dialogClose" aria-label="Fechar" type="button"><i data-lucide="x"></i></button><div id="dialogContent"></div></dialog>
 </body>
