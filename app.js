@@ -81,11 +81,12 @@ const setRoute = route => {
   render();
 };
 
-const toast = message => {
+const toast = (message, kind = 'success') => {
   const region=document.querySelector('#toastRegion');
   const el=document.createElement('div');
-  el.className='toast';
-  el.innerHTML=`<i data-lucide="check-circle-2">\
+  el.className=`toast ${kind === 'error' ? 'toast-error' : ''}`;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.innerHTML=`<i data-lucide="${kind === 'error' ? 'alert-circle' : 'check-circle-2'}">\
     </i>\
     <span>${esc(message)}</span>`;
   region.append(el);
@@ -101,7 +102,6 @@ const icons = () =>
   });
 
 const film = id => allMovies().find(movie=>String(movie.id)===String(id)) || library.getAll().find(movie=>String(movie.id)===String(id)) || library.get('favorites').find(movie=>String(movie.id)===String(id)) || library.get('watched').find(movie=>String(movie.id)===String(id));
-// Catalog filtering and presentation
 
 function filteredMovies(source=allMovies()) {
   const query = state.query.trim().toLocaleLowerCase('pt-BR');
@@ -257,7 +257,6 @@ function emptyState(title, copy, icon = 'film') {
     </button>\
     </div>`;
 }
-// Dashboard and page templates
 
 function dashboard() {
   const featured = allMovies().find(movie => movie.featured) || movies[0];
@@ -357,6 +356,7 @@ function dashboard() {
     </div>\
     </section>
     ${publicDashboard()}
+    ${personalDashboard()}
     <section class="panel dashboard-diary-highlight">
       <div><span class="eyebrow">DADOS SALVOS NA NUVEM</span>
       <h2>Diário de filmes</h2>
@@ -451,7 +451,6 @@ function catalogPage(route) {
   }</div>`:emptyState('Nenhum filme por aqui',route==='biblioteca'?'Adicione filmes à sua biblioteca a partir da página Explorar.':'Tente alterar os filtros ou explore o catálogo completo.',icon)}`;
 }
 
-// Dashboard público: dados obtidos em tempo real de uma API externa, sem valores inventados.
 function publicMoviesFiltered() {
   return state.publicFilms.filter(movie =>
     (!state.publicDecade || String(Math.floor(movie.year / 10) * 10) === state.publicDecade) &&
@@ -461,6 +460,9 @@ function publicDashboard() {
   const decades = [...new Set(state.publicFilms.filter(f => f.year).map(f => Math.floor(f.year / 10) * 10))].sort((a, b) => a - b);
   const directors = [...new Set(state.publicFilms.map(f => f.director).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'pt-BR'));
   const filmCount = publicMoviesFiltered().length;
+  const publicPlaceholder = state.publicLoading ? '<div class="chart-placeholder"><span class="loading-spinner" aria-hidden="true"></span><span>Consultando API pública...</span></div>' :
+    state.publicError ? '<div class="chart-placeholder">Os gráficos não puderam ser carregados. Tente atualizar a API.</div>' :
+    !filmCount ? '<div class="chart-placeholder">Nenhum filme corresponde aos filtros selecionados.</div>' : '';
   return `<section class="content-section public-dashboard" aria-label="Painel de dados públicos sobre cinema">
       <div class="section-heading"><div><h2>Dados reais do cinema</h2>
       <p class="chart-source">Fonte: <a href="https://ghibliapi.dev/" target="_blank" rel="noopener noreferrer">Studio Ghibli API</a> · ${state.publicLoading ? 'Carregando...' : state.publicError ? 'Indisponível' : `${filmCount} filmes no filtro atual`}</p></div>
@@ -478,14 +480,45 @@ function publicDashboard() {
       </div>
       <div class="charts-grid public-graphs">
         <section class="panel chart-panel"><div class="panel-heading"><div><h2>Lançamentos por década</h2><p>Eixo X: décadas · Eixo Y: quantidade de filmes</p></div></div>
-          <div class="chart-canvas"><canvas id="catalogDecadeChart" aria-label="Gráfico de barras de filmes por década"></canvas></div></section>
+          <div class="chart-canvas"><canvas id="catalogDecadeChart" aria-label="Gráfico de barras de filmes por década" ${publicPlaceholder ? 'hidden' : ''}></canvas>${publicPlaceholder}</div></section>
         <section class="panel chart-panel"><div class="panel-heading"><div><h2>Filmes por diretor</h2><p>Fatias por diretor · Unidade: filmes</p></div></div>
-          <div class="chart-canvas"><canvas id="catalogDirectorChart" aria-label="Gráfico de rosca por diretor"></canvas></div></section>
+          <div class="chart-canvas"><canvas id="catalogDirectorChart" aria-label="Gráfico de rosca por diretor" ${publicPlaceholder ? 'hidden' : ''}></canvas>${publicPlaceholder}</div></section>
       </div>
       <section class="panel chart-panel timeline-panel"><div class="panel-heading"><div><h2>Nota crítica média por década</h2><p>Eixo X: décadas · Eixo Y: pontuação Rotten Tomatoes (%)</p></div></div>
-        <div class="chart-canvas chart-short"><canvas id="catalogScoreChart" aria-label="Gráfico de linha de nota média por década"></canvas></div></section>
+        <div class="chart-canvas chart-short"><canvas id="catalogScoreChart" aria-label="Gráfico de linha de nota média por década" ${publicPlaceholder ? 'hidden' : ''}></canvas>${publicPlaceholder}</div></section>
       <p class="chart-source">Os dados representam lançamentos e notas informados pela API pública do Studio Ghibli. Os registros pessoais são exibidos em Estatísticas e Diário na nuvem.</p>
     </section>`;
+}
+
+function personalDashboard() {
+  const entries = state.diaryEntries;
+  const average = entries.length ? (entries.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / entries.length).toFixed(1) : '—';
+  const today = new Date();
+  const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const thisMonth = entries.filter(entry => String(entry.watched_on || '').startsWith(monthKey)).length;
+  const isEmpty = !entries.length && !state.diaryLoading && !state.diaryError;
+  const unavailable = state.diaryLoading || state.diaryError || isEmpty;
+  const placeholder = state.diaryLoading ? '<div class="chart-placeholder"><span class="loading-spinner" aria-hidden="true"></span><span>Carregando seus registros...</span></div>' :
+    state.diaryError ? '<div class="chart-placeholder">Não foi possível carregar os dados.</div>' :
+    isEmpty ? '<div class="chart-placeholder">Adicione filmes ao Diário para preencher este gráfico.</div>' : '';
+  return `<section class="content-section personal-dashboard" aria-label="Estatísticas dos filmes assistidos">
+    <div class="section-heading"><div><h2>Seu cinema em números</h2>
+      <p class="chart-source">Estatísticas reais dos filmes que você registrou no Diário na nuvem.</p></div>
+      <button class="button button-glass" type="button" data-route="diario"><i data-lucide="notebook-pen"></i> Ver diário</button></div>
+    ${state.diaryError ? `<div class="data-alert" role="alert">${esc(state.diaryError)} <button type="button" class="inline-retry" id="retryDiaryDashboard">Tentar novamente</button></div>` : ''}
+    <div class="personal-metrics">
+      <div class="personal-metric"><span>Filmes registrados</span><strong>${state.diaryLoading ? '…' : entries.length}</strong><small>sessões na sua conta</small></div>
+      <div class="personal-metric"><span>Sua nota média</span><strong>${state.diaryLoading ? '…' : average}${entries.length ? '<small> / 5</small>' : ''}</strong><small>avaliações do Diário</small></div>
+      <div class="personal-metric"><span>Assistidos neste mês</span><strong>${state.diaryLoading ? '…' : thisMonth}</strong><small>pela data registrada</small></div>
+    </div>
+    <div class="charts-grid personal-graphs">
+      <section class="panel chart-panel"><div class="panel-heading"><div><h2>Filmes por mês</h2><p>Eixo X: últimos seis meses · Eixo Y: sessões assistidas</p></div></div>
+        <div class="chart-canvas"><canvas id="personalMonthChart" aria-label="Gráfico de barras de filmes assistidos por mês" ${unavailable ? 'hidden' : ''}></canvas>${placeholder}</div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><h2>Distribuição das suas notas</h2><p>Quantidade de avaliações de 1 a 5 estrelas</p></div></div>
+        <div class="chart-canvas"><canvas id="personalScoreChart" aria-label="Gráfico de rosca de notas dos filmes" ${unavailable ? 'hidden' : ''}></canvas>${placeholder}</div></section>
+    </div>
+    ${isEmpty ? '<p class="personal-empty-action"><i data-lucide="sparkles"></i> Seu painel pessoal começa com o primeiro registro. <button type="button" class="text-link" data-route="diario">Cadastrar um filme <i data-lucide="arrow-right"></i></button></p>' : ''}
+  </section>`;
 }
 
 function diaryPage() {
@@ -502,28 +535,39 @@ function diaryPage() {
               autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
               aria-expanded="false" aria-controls="diaryMovieSuggestions" value="${esc(editing?.movie_title || '')}">
             <div id="diaryMovieSuggestions" class="diary-movie-suggestions" role="listbox" aria-label="Sugestões de filmes" hidden></div>
-            <p class="diary-movie-help">Digite pelo menos 2 letras para ver sugestões. Você também pode escrever um título manualmente.</p>
+            <p class="diary-movie-help">Digite pelo menos 2 letras. Selecione uma sugestão para preencher o título, o ano e o pôster.</p>
           </div>
+          <div id="diarySelectedMovie" class="diary-selected-movie" ${!editing?.poster_url ? 'hidden' : ''} aria-live="polite">
+            <div class="diary-selected-poster">${safeImage(editing?.poster_url) ? `<img src="${esc(safeImage(editing.poster_url))}" alt="Pôster do filme selecionado" loading="lazy">` : '<i data-lucide="film"></i>'}</div>
+            <div class="diary-selected-details"><span>FILME SELECIONADO</span><strong id="diarySelectedTitle">${esc(editing?.movie_title || '')}</strong><small id="diarySelectedYear">${esc(editing?.movie_year || 'Ano não informado')}</small></div>
+            <button type="button" class="icon-button" id="diaryClearSelection" title="Remover seleção do catálogo" aria-label="Remover seleção do catálogo"><i data-lucide="x"></i></button>
+          </div>
+          <input type="hidden" name="poster_url" id="diaryPosterUrl" value="${esc(safeImage(editing?.poster_url || ''))}">
+          <label for="diaryMovieYear">Ano de lançamento (opcional)
+            <input id="diaryMovieYear" type="number" name="movie_year" inputmode="numeric" min="1888" max="2100" placeholder="Preenchido ao selecionar um filme" value="${esc(editing?.movie_year || '')}">
+          </label>
           <div class="diary-input-grid"><label>Data em que assistiu <input type="date" name="watched_on" required value="${esc(date)}"></label>
             <label>Sua nota (estrelas) <select name="score" required>${[1,2,3,4,5].map(n => `<option value="${n}" ${n === (editing?.score || 5) ? 'selected' : ''}>${n} de 5</option>`).join('')}</select></label></div>
           <label>Anotação (opcional) <textarea name="note" maxlength="700" rows="4" placeholder="O que achou do filme?">${esc(editing?.note || '')}</textarea></label>
-          <div class="diary-buttons"><button class="button button-primary" type="submit"><i data-lucide="save"></i> ${editing ? 'Salvar alterações' : 'Adicionar registro'}</button>
+          <div id="diaryFormError" class="data-alert" role="alert" hidden></div>
+          <div class="diary-buttons"><button class="button button-primary" type="submit"><i data-lucide="save"></i> <span class="diary-submit-label">${editing ? 'Salvar alterações' : 'Adicionar registro'}</span></button>
             ${editing ? '<button class="button button-secondary" type="button" id="diaryCancel">Cancelar</button>' : ''}</div>
         </form>
         <p class="form-help">Dados armazenados no Supabase com Row Level Security (RLS), separados por usuário.</p>
       </section>
       <section class="panel diary-records"><div class="diary-list-top"><div><h2>Meus registros</h2><p>${state.diaryEntries.length} ${state.diaryEntries.length === 1 ? 'sessão' : 'sessões'} na nuvem</p></div>
         <button class="icon-button" id="diaryRefresh" type="button" aria-label="Recarregar registros" title="Recarregar"><i data-lucide="refresh-cw"></i></button></div>
-        ${state.diaryLoading ? '<p class="diary-hint">Carregando registros...</p>' : ''}
-        ${state.diaryError ? `<p class="data-alert" role="alert">${esc(state.diaryError)}</p>` : ''}
+        ${state.diaryLoading ? '<div class="diary-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span> Carregando seus registros...</div><div class="diary-skeleton"></div><div class="diary-skeleton"></div>' : ''}
+        ${state.diaryError ? `<div class="data-alert" role="alert">${esc(state.diaryError)}<button class="inline-retry" type="button" id="diaryRetry">Tentar novamente</button></div>` : ''}
         <div class="diary-entries">${state.diaryEntries.length ? state.diaryEntries.map(entry => {
           const watched = new Date(`${entry.watched_on}T12:00:00`);
-          return `<article class="diary-entry"><div class="diary-entry-main"><strong>${esc(entry.movie_title)}</strong>
-            <small>${Number.isNaN(watched.getTime()) ? esc(entry.watched_on) : watched.toLocaleDateString('pt-BR')} · ${Number(entry.score)}/5 estrelas</small>
+          const poster = safeImage(entry.poster_url);
+          return `<article class="diary-entry"><div class="diary-entry-cover">${poster ? `<img src="${esc(poster)}" alt="Pôster de ${esc(entry.movie_title)}" loading="lazy">` : '<i data-lucide="film"></i>'}</div><div class="diary-entry-main"><strong>${esc(entry.movie_title)}</strong>
+            <small>${entry.movie_year ? `${esc(entry.movie_year)} · ` : ''}${Number.isNaN(watched.getTime()) ? esc(entry.watched_on) : watched.toLocaleDateString('pt-BR')} · ${Number(entry.score)}/5 estrelas</small>
             ${entry.note ? `<p>${esc(entry.note)}</p>` : ''}</div>
             <div class="diary-entry-actions"><button type="button" data-diary-edit="${esc(entry.id)}" aria-label="Editar ${esc(entry.movie_title)}"><i data-lucide="pencil"></i></button>
             <button type="button" data-diary-delete="${esc(entry.id)}" aria-label="Excluir ${esc(entry.movie_title)}"><i data-lucide="trash-2"></i></button></div></article>`;
-        }).join('') : (!state.diaryLoading && !state.diaryError ? '<p class="diary-hint">Seu diário ainda está vazio. Adicione o primeiro filme no formulário.</p>' : '')}</div>
+        }).join('') : (!state.diaryLoading && !state.diaryError ? '<div class="diary-hint diary-empty"><i data-lucide="notebook-pen"></i><strong>Nenhum filme registrado ainda</strong><span>Escolha um filme no formulário e comece a montar seu histórico.</span></div>' : '')}</div>
       </section>
     </div>`;
 }
@@ -709,7 +753,6 @@ function settingsPage() {
     </section>\
     </div>`;
 }
-// Rendering and page event bindings
 
 const chartInstances = [];
 function destroyCharts() {
@@ -742,11 +785,10 @@ function render() {
     drawCharts();
   } else if (state.route === 'dashboard') {
     drawPublicCharts();
+    drawPersonalCharts();
   }
 }
 
-// Sugestões de filmes no Diário: catálogo público + catálogo demonstrativo,
-// com busca completa no TMDB quando o usuário cadastrou sua chave em Configurações.
 function bindDiaryMovieAutocomplete() {
   const input = page.querySelector('#diaryMovieInput');
   const list = page.querySelector('#diaryMovieSuggestions');
@@ -756,6 +798,46 @@ function bindDiaryMovieAutocomplete() {
   let requestVersion = 0;
   let suggestions = [];
   let activeIndex = -1;
+  const yearInput = page.querySelector('#diaryMovieYear');
+  const posterInput = page.querySelector('#diaryPosterUrl');
+  const selected = page.querySelector('#diarySelectedMovie');
+  const selectedTitle = page.querySelector('#diarySelectedTitle');
+  const selectedYear = page.querySelector('#diarySelectedYear');
+  const selectedPoster = selected?.querySelector('.diary-selected-poster');
+  let selectedMovieTitle = posterInput?.value ? input.value.trim() : '';
+
+  const updateSelection = movie => {
+    const poster = safeImage(movie?.poster || '');
+    posterInput.value = poster;
+    yearInput.value = movie?.year && Number(movie.year) >= 1888 && Number(movie.year) <= 2100 ? movie.year : '';
+    selectedMovieTitle = movie?.title || '';
+    if (!movie) {
+      selected.hidden = true;
+      return;
+    }
+    selectedTitle.textContent = movie.title;
+    selectedYear.textContent = yearInput.value || 'Ano não informado';
+    selectedPoster.replaceChildren();
+    if (poster) {
+      const img = document.createElement('img');
+      img.src = poster;
+      img.alt = `Pôster de ${movie.title}`;
+      img.loading = 'lazy';
+      selectedPoster.append(img);
+    } else {
+      selectedPoster.innerHTML = '<i data-lucide="film"></i>';
+      icons();
+    }
+    selected.hidden = false;
+  };
+
+  page.querySelector('#diaryClearSelection')?.addEventListener('click', () => {
+    posterInput.value = '';
+    yearInput.value = '';
+    selectedMovieTitle = '';
+    selected.hidden = true;
+    input.focus();
+  });
 
   const normalize = text => String(text || '').normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
@@ -796,6 +878,7 @@ function bindDiaryMovieAutocomplete() {
     const movie = suggestions[index];
     if (!movie) return;
     input.value = movie.title;
+    updateSelection(movie);
     close();
     input.focus();
   };
@@ -855,7 +938,15 @@ function bindDiaryMovieAutocomplete() {
     }, 300);
   };
 
-  input.addEventListener('input', search);
+  input.addEventListener('input', () => {
+    if (selectedMovieTitle && input.value.trim() !== selectedMovieTitle) {
+      posterInput.value = '';
+      yearInput.value = '';
+      selectedMovieTitle = '';
+      selected.hidden = true;
+    }
+    search();
+  });
   input.addEventListener('focus', () => { if (input.value.trim().length >= 2) search(); });
   input.addEventListener('keydown', event => {
     if (list.hidden || !suggestions.length) {
@@ -882,7 +973,6 @@ function bindDiaryMovieAutocomplete() {
     event.preventDefault();
     choose(Number(option.dataset.diarySuggestion));
   });
-  // Clique também funciona para navegação assistiva sem pointer events.
   list.addEventListener('click', event => {
     const option = event.target.closest('[data-diary-suggestion]');
     if (option) choose(Number(option.dataset.diarySuggestion));
@@ -960,6 +1050,8 @@ function bindPageEvents() {
   page.querySelector('#reloadPublic')?.addEventListener('click', () => refreshPublicFilms());
   bindDiaryMovieAutocomplete();
   page.querySelector('#diaryRefresh')?.addEventListener('click', () => refreshDiary());
+  page.querySelector('#diaryRetry')?.addEventListener('click', () => refreshDiary());
+  page.querySelector('#retryDiaryDashboard')?.addEventListener('click', () => refreshDiary());
   page.querySelector('#diaryCancel')?.addEventListener('click', () => { state.editingDiaryId = null; render(); });
   page.querySelectorAll('[data-diary-edit]').forEach(button => button.addEventListener('click', () => {
     state.editingDiaryId = button.dataset.diaryEdit;
@@ -970,39 +1062,67 @@ function bindPageEvents() {
     const item = state.diaryEntries.find(entry => entry.id === button.dataset.diaryDelete);
     if (!item || !window.confirm(`Excluir o registro de "${item.movie_title}"?`)) return;
     button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
     try {
       await deleteDiaryEntry(item.id);
       if (state.editingDiaryId === item.id) state.editingDiaryId = null;
       await refreshDiary();
       toast('Registro excluído da nuvem');
-    } catch (error) { state.diaryError = error.message; render(); }
+    } catch (error) {
+      toast(error.message || 'Não foi possível excluir o registro.', 'error');
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
   }));
   page.querySelector('#diaryForm')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
     const fields = new FormData(form);
+    const yearText = String(fields.get('movie_year') || '').trim();
+    const year = yearText ? Number(yearText) : null;
     const entry = {
       movie_title: String(fields.get('movie_title') || '').trim(),
+      movie_year: year,
+      poster_url: safeImage(String(fields.get('poster_url') || '')) || null,
       watched_on: String(fields.get('watched_on') || ''),
       score: Number(fields.get('score')),
       note: String(fields.get('note') || '').trim(),
     };
+    const errorBox = form.querySelector('#diaryFormError');
+    const showFormError = message => {
+      errorBox.textContent = message;
+      errorBox.hidden = false;
+      errorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    errorBox.hidden = true;
     if (!entry.movie_title || entry.movie_title.length > 120 || !/^\d{4}-\d{2}-\d{2}$/.test(entry.watched_on) ||
-        !Number.isInteger(entry.score) || entry.score < 1 || entry.score > 5 || entry.note.length > 700) {
-      state.diaryError = 'Preencha corretamente os campos do registro.';
-      render();
+        !Number.isInteger(entry.score) || entry.score < 1 || entry.score > 5 || entry.note.length > 700 ||
+        (year !== null && (!Number.isInteger(year) || year < 1888 || year > 2100))) {
+      showFormError('Confira o título, o ano, a data, a nota e a anotação antes de salvar.');
       return;
     }
     const submit = form.querySelector('[type="submit"]');
+    const label = form.querySelector('.diary-submit-label');
+    const originalLabel = label.textContent;
     submit.disabled = true;
+    submit.setAttribute('aria-busy', 'true');
+    label.textContent = 'Salvando...';
     try {
       if (state.editingDiaryId) await updateDiaryEntry(state.editingDiaryId, entry);
       else await createDiaryEntry(entry);
       state.editingDiaryId = null;
       await refreshDiary();
       toast('Registro salvo no Supabase');
-    } catch (error) { state.diaryError = error.message; render(); }
-    finally { submit.disabled = false; }
+    } catch (error) {
+      if (form.isConnected) showFormError(error.message || 'Não foi possível salvar. Tente novamente.');
+      else toast(error.message || 'Não foi possível salvar.', 'error');
+    } finally {
+      if (submit.isConnected) {
+        submit.disabled = false;
+        submit.removeAttribute('aria-busy');
+        label.textContent = originalLabel;
+      }
+    }
   });
   page.querySelector('#toggleKey')?.addEventListener('click', ()=> {
     const input=page.querySelector('#tmdbKey');
@@ -1021,7 +1141,6 @@ function bindPageEvents() {
   }
   );
 }
-// Movie details and collection actions
 
 function openMovie(id) {
   const movie=film(id);
@@ -1284,7 +1403,6 @@ function drawCharts() {
     }));
   }
 }
-// TMDB search
 
 async function searchRemote(query) {
   const key=library.apiKey();
@@ -1300,8 +1418,60 @@ async function searchRemote(query) {
   }
 }
 
+function drawPersonalCharts() {
+  if (!window.Chart || !state.diaryEntries.length || state.diaryLoading || state.diaryError) return;
+  const entries = state.diaryEntries;
+  const now = new Date();
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      label: date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', ''),
+    };
+  });
+  const monthly = new Map(months.map(month => [month.key, 0]));
+  const scores = [0, 0, 0, 0, 0];
+  entries.forEach(entry => {
+    const month = String(entry.watched_on || '').slice(0, 7);
+    if (monthly.has(month)) monthly.set(month, monthly.get(month) + 1);
+    const score = Number(entry.score);
+    if (Number.isInteger(score) && score >= 1 && score <= 5) scores[score - 1] += 1;
+  });
+  const monthlyCanvas = page.querySelector('#personalMonthChart');
+  if (monthlyCanvas) chartInstances.push(new Chart(monthlyCanvas, {
+    type: 'bar',
+    data: {
+      labels: months.map(month => month.label),
+      datasets: [{ label: 'Filmes assistidos', data: months.map(month => monthly.get(month.key)), backgroundColor: '#a78bfa', borderRadius: 7, maxBarThickness: 45 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#24212d', titleColor: '#fff', bodyColor: '#ddd4ee' } },
+      scales: {
+        x: { title: { display: true, text: 'Mês em que assistiu', color: '#a9a3b8' }, ticks: { color: '#b8b2c4' }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: '#b8b2c4', precision: 0 }, title: { display: true, text: 'Quantidade de sessões', color: '#a9a3b8' }, grid: { color: 'rgba(255,255,255,.07)' } },
+      },
+    },
+  }));
+  const scoresCanvas = page.querySelector('#personalScoreChart');
+  if (scoresCanvas) chartInstances.push(new Chart(scoresCanvas, {
+    type: 'doughnut',
+    data: {
+      labels: ['1 estrela', '2 estrelas', '3 estrelas', '4 estrelas', '5 estrelas'],
+      datasets: [{ label: 'Filmes avaliados', data: scores, backgroundColor: ['#8d9bf4', '#7dd3fc', '#83c4bd', '#e7a4c6', '#a78bfa'], borderWidth: 0, hoverOffset: 6 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: {
+        legend: { position: 'right', labels: { color: '#c5bbd7', font: { family: 'DM Sans', size: 11 }, usePointStyle: true, boxWidth: 9, padding: 14 } },
+        tooltip: { callbacks: { label: context => `${context.label}: ${context.parsed} filme(s)` } },
+      },
+    },
+  }));
+}
+
 function drawPublicCharts() {
-  if (!window.Chart || !state.publicFilms.length) return;
+  if (!window.Chart || state.publicLoading || state.publicError || !publicMoviesFiltered().length) return;
   const films = publicMoviesFiltered();
   const byDecade = new Map();
   const byDirector = new Map();
@@ -1367,7 +1537,6 @@ async function refreshPublicFilms() {
     if (!films.length) throw new Error('A API não retornou filmes');
     state.publicFilms = films;
   } catch (error) {
-    // Não fabrica resultados: exibe a indisponibilidade e mantém o catálogo de exemplo separado.
     state.publicError = error.message || 'Erro ao consultar os filmes públicos';
   } finally { state.publicLoading = false; render(); }
 }
@@ -1401,7 +1570,6 @@ window.addEventListener('movie-auth-changed', () => {
   refreshDiary();
 });
 
-// Application startup and global events
 
 document.addEventListener('click', event=> {
   const route=event.target.closest('[data-route]');
@@ -1449,6 +1617,5 @@ window.addEventListener('hashchange', ()=> {
 const initial=location.hash.slice(1);
 if(routeNames[initial])state.route=initial;
 render();
-// A página inicial também traz dados reais de uma API pública sem chave.
 refreshPublicFilms();
 if (getActiveUser()) refreshDiary();

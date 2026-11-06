@@ -1,4 +1,3 @@
-// Catálogo demonstrativo. As notas são valores de exemplo, não dados em tempo real.
 const seed = [
   [1,'Duna: Parte Dois','Dune: Part Two',2024,'Ficção científica',8.5,'8.4k','2h 46min','Denis Villeneuve','1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg','Paul Atreides se une a Chani e aos Fremen enquanto busca vingança contra os conspiradores que destruíram sua família. Diante da escolha entre o amor de sua vida e o destino do universo, ele tenta evitar um futuro terrível que só ele pode prever.','O destino está escrito nas areias.',['Ficção científica','Aventura']],
   [2,'Oppenheimer','Oppenheimer',2023,'Drama',8.3,'9.1k','3h 00min','Christopher Nolan','ptpr0kGAckfQkJeJIt8st5dglvd.jpg','A história do físico J. Robert Oppenheimer e seu papel no desenvolvimento da bomba atômica durante a Segunda Guerra Mundial.','O mundo para sempre mudou.',['Drama','História']],

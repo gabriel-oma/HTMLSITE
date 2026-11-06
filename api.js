@@ -59,7 +59,6 @@ export function createTmdbClient(apiKey) {
   };
 }
 
-// Cliente opcional do Back4App; não é ativado automaticamente.
 export function createParseClient({serverUrl, appId, javascriptKey}) {
   if (!serverUrl || !appId || !javascriptKey) throw new Error('Configure serverUrl, appId e javascriptKey do Back4App.');
   const baseUrl = serverUrl.replace(/\/$/, '');

@@ -12,7 +12,7 @@ function read(key, fallback) {
 function write(key, value) {
   fallbackMemory.set(storageKey(key), value);
   try { localStorage.setItem(storageKey(key), JSON.stringify(value)); }
-  catch { /* A aplicação continua em memória quando o armazenamento está indisponível. */ }
+  catch {  }
 }
 const sameId = (a, b) => String(a) === String(b);
 const list = key => { const data = read(key, []); return Array.isArray(data) ? data : []; };

@@ -1,5 +1,3 @@
-// API pública de filmes do Studio Ghibli (sem chave de acesso).
-// Fonte: https://ghibliapi.dev/ (GET /films).
 const FILMS_ENDPOINT = 'https://ghibliapi.dev/films';
 
 export async function loadPublicFilms() {
