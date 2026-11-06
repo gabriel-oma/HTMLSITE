@@ -991,7 +991,7 @@ function bindPageEvents() {
     if (!movie) return;
     const added=library.toggle('favorites', movie);
     library.addActivity({
-      movieId:movie.id, type:'favorite', date:'Agora', detail:added?'Adicionado aos favoritos':'Removido dos favoritos'
+      movieId:movie.id, movieTitle:movie.title, type:'favorite', date:'Agora', detail:added?'Adicionado aos favoritos':'Removido dos favoritos'
     }
     );
     toast(added?'Adicionado aos favoritos':'Removido dos favoritos');
@@ -1003,7 +1003,7 @@ function bindPageEvents() {
     const [id, value]=el.dataset.rate.split('|');
     library.rate(id, Number(value), film(id));
     library.addActivity({
-      movieId:id, type:'rated', date:'Agora', detail:`Você avaliou com ${value} estrelas`
+      movieId:id, movieTitle:film(id)?.title || '', type:'rated', date:'Agora', detail:`Você avaliou com ${value} estrelas`
     }
     );
     toast('Avaliação salva');
@@ -1198,7 +1198,7 @@ function openMovie(id) {
     if (!movie) return;
     const added=library.toggle('favorites', movie);
     library.addActivity({
-      movieId:movie.id, type:'favorite', date:'Agora', detail:added?'Adicionado aos favoritos':'Removido dos favoritos'
+      movieId:movie.id, movieTitle:movie.title, type:'favorite', date:'Agora', detail:added?'Adicionado aos favoritos':'Removido dos favoritos'
     }
     );
     toast(added?'Adicionado aos favoritos':'Removido dos favoritos');
@@ -1209,7 +1209,7 @@ function openMovie(id) {
   dialogContent.querySelector('[data-add-library]')?.addEventListener('click', ()=> {
     library.upsert(movie);
     library.addActivity({
-      movieId:movie.id, type:'watched', date:'Agora', detail:'Adicionado à biblioteca'
+      movieId:movie.id, movieTitle:movie.title, type:'watched', date:'Agora', detail:'Adicionado à biblioteca'
     }
     );
     toast('Adicionado à biblioteca');
@@ -1221,7 +1221,7 @@ function openMovie(id) {
     const [, value]=el.dataset.rate.split('|');
     library.rate(movie.id, Number(value), movie);
     library.addActivity({
-      movieId:movie.id, type:'rated', date:'Agora', detail:`Você avaliou com ${value} estrelas`
+      movieId:movie.id, movieTitle:movie.title, type:'rated', date:'Agora', detail:`Você avaliou com ${value} estrelas`
     }
     );
     toast('Avaliação salva');
@@ -1239,7 +1239,7 @@ function toggleWatched(id) {
   const added=library.toggle('watched', movie);
   library.upsert(movie);
   library.addActivity({
-    movieId:id, type:'watched', date:'Agora', detail:added?'Marcado como assistido':'Removido dos assistidos'
+    movieId:id, movieTitle:movie.title, type:'watched', date:'Agora', detail:added?'Marcado como assistido':'Removido dos assistidos'
   }
   );
   toast(added?'Marcado como assistido':'Removido dos assistidos');
@@ -1545,6 +1545,7 @@ async function refreshDiary() {
   const userAtStart = getActiveUser()?.id;
   if (!userAtStart) {
     state.diaryEntries = [];
+    window.dispatchEvent(new CustomEvent('movie-diary-updated', { detail: { entries: [] } }));
     state.diaryError = '';
     state.diaryLoading = false;
     state.editingDiaryId = null;
@@ -1556,7 +1557,10 @@ async function refreshDiary() {
   render();
   try {
     const entries = await listDiaryEntries();
-    if (getActiveUser()?.id === userAtStart) state.diaryEntries = entries;
+    if (getActiveUser()?.id === userAtStart) {
+      state.diaryEntries = entries;
+      window.dispatchEvent(new CustomEvent('movie-diary-updated', { detail: { entries } }));
+    }
   } catch (error) {
     if (getActiveUser()?.id === userAtStart) state.diaryError = error.message || 'Falha ao carregar o diário';
   } finally {
@@ -1565,6 +1569,7 @@ async function refreshDiary() {
 }
 window.addEventListener('movie-auth-changed', () => {
   state.diaryEntries = [];
+  window.dispatchEvent(new CustomEvent('movie-diary-updated', { detail: { entries: [] } }));
   state.diaryError = '';
   state.editingDiaryId = null;
   refreshDiary();

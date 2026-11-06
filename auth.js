@@ -59,12 +59,29 @@ document.getElementById('profileMore').addEventListener('click', event => {
 document.addEventListener('click', event => {
   if (!event.target.closest('.profile')) profileMenu.hidden = true;
 });
-document.getElementById('logoutButton').addEventListener('click', async () => {
-  profileMenu.hidden = true;
-  if (client) await client.auth.signOut();
+export async function signOut() {
+  if (!client) throw new Error('Não foi possível acessar sua sessão.');
+  const { error } = await client.auth.signOut();
+  if (error) throw error;
   displayUser(null);
   form.reset();
   setMode(false);
+}
+
+export async function updateDisplayName(name) {
+  const cleaned = String(name || '').trim();
+  if (cleaned.length < 2 || cleaned.length > 70) throw new Error('Informe um nome entre 2 e 70 caracteres.');
+  if (!client || !currentUser) throw new Error('Entre na sua conta para alterar o nome.');
+  const { data, error } = await client.auth.updateUser({ data: { display_name: cleaned } });
+  if (error) throw error;
+  if (data.user) displayUser(data.user);
+  window.dispatchEvent(new Event('movie-profile-updated'));
+}
+
+document.getElementById('logoutButton').addEventListener('click', async () => {
+  profileMenu.hidden = true;
+  try { await signOut(); }
+  catch (error) { window.alert(error.message || 'Não foi possível sair da conta.'); }
 });
 form.addEventListener('submit', async event => {
   event.preventDefault();

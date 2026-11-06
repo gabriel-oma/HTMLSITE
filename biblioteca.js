@@ -56,10 +56,13 @@ export const library = {
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
   },
   getActivity: () => list('activity'),
+  getNotificationReadAt: () => Number(read('notificationReadAt', 0)) || 0,
+  markNotificationsRead: () => write('notificationReadAt', Date.now()),
   addActivity(entry) {
     if (!entry) return;
     const createdAt = entry.createdAt || new Date().toISOString();
     write('activity', [{...entry, createdAt}, ...list('activity')].slice(0, 100));
+    window.dispatchEvent(new Event('movie-activity-changed'));
   },
   apiKey: () => settings().tmdbKey || '',
   settings,
