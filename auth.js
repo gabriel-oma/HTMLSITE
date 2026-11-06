@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './auth-config.js';
+import { library } from './biblioteca.js';
 
 const configured = Boolean(SUPABASE_URL.trim() && SUPABASE_PUBLISHABLE_KEY.trim());
 let client = null;
@@ -25,7 +26,12 @@ function showMessage(message, success = false) {
   errorBox.hidden = !message;
 }
 function displayUser(user) {
+  const oldId = currentUser?.id || null;
   currentUser = user;
+  library.setActiveUser(user?.id || null);
+  if (oldId !== (user?.id || null)) {
+    window.dispatchEvent(new CustomEvent('movie-auth-changed', { detail: { userId: user?.id || null } }));
+  }
   const name = user?.user_metadata?.display_name?.trim() || user?.email?.split('@')[0] || 'Meu perfil';
   profileName.textContent = name;
   profileAvatar.textContent = initials(name);
@@ -83,6 +89,9 @@ form.addEventListener('submit', async event => {
   } catch (error) { showMessage(error.message || 'Não foi possível concluir a operação.'); }
   finally { submit.disabled = false; submit.textContent = signup ? 'Criar conta' : 'Entrar'; }
 });
+
+export const getSupabaseClient = () => client;
+export const getActiveUser = () => currentUser;
 
 export async function initializeAuth() {
   displayUser(null);

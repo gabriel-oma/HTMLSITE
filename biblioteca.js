@@ -1,15 +1,17 @@
 const PREFIX = 'movie-explorer:';
+let activeUser = 'visitor';
 const fallbackMemory = new Map();
+const storageKey = key => `${PREFIX}account:${activeUser}:${key}`;
 
 function read(key, fallback) {
   try {
-    const raw = localStorage.getItem(PREFIX + key);
-    return raw === null ? (fallbackMemory.has(key) ? fallbackMemory.get(key) : fallback) : JSON.parse(raw);
-  } catch { return fallbackMemory.has(key) ? fallbackMemory.get(key) : fallback; }
+    const raw = localStorage.getItem(storageKey(key));
+    return raw === null ? (fallbackMemory.has(storageKey(key)) ? fallbackMemory.get(storageKey(key)) : fallback) : JSON.parse(raw);
+  } catch { return fallbackMemory.has(storageKey(key)) ? fallbackMemory.get(storageKey(key)) : fallback; }
 }
 function write(key, value) {
-  fallbackMemory.set(key, value);
-  try { localStorage.setItem(PREFIX + key, JSON.stringify(value)); }
+  fallbackMemory.set(storageKey(key), value);
+  try { localStorage.setItem(storageKey(key), JSON.stringify(value)); }
   catch { /* A aplicação continua em memória quando o armazenamento está indisponível. */ }
 }
 const sameId = (a, b) => String(a) === String(b);
@@ -17,6 +19,7 @@ const list = key => { const data = read(key, []); return Array.isArray(data) ? d
 const settings = () => { const data = read('settings', {}); return data && typeof data === 'object' && !Array.isArray(data) ? data : {}; };
 
 export const library = {
+  setActiveUser(id) { activeUser = id ? String(id) : 'visitor'; },
   getAll: () => list('library'),
   get: key => list(key),
   set: (key, value) => write(key, value),

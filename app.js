@@ -1,6 +1,9 @@
 import { movies, activitySeed } from './data.js';
 import { library } from './biblioteca.js';
 import { createTmdbClient } from './api.js';
+import { loadPublicFilms } from './catalogo-publico.js';
+import { listDiaryEntries, createDiaryEntry, updateDiaryEntry, deleteDiaryEntry } from './diario-api.js';
+import { getActiveUser } from './auth.js';
 
 const page = document.querySelector('#pageContent');
 
@@ -15,6 +18,7 @@ const routeNames = {
   favoritos: 'Favoritos',
   avaliacoes: 'Avaliações',
   estatisticas: 'Estatísticas',
+  diario: 'Diário na nuvem',
   configuracoes: 'Configurações',
 };
 
@@ -28,10 +32,19 @@ const state = {
   source: 'local',
   remoteMovies: [],
   loading: false,
+  publicFilms: [],
+  publicLoading: true,
+  publicError: '',
+  publicDecade: '',
+  publicDirector: '',
+  diaryEntries: [],
+  diaryError: '',
+  diaryLoading: false,
+  editingDiaryId: null,
 };
 
 const allMovies = () =>
-  [...state.remoteMovies, ...movies].filter(
+  [...state.remoteMovies, ...state.publicFilms, ...movies].filter(
     (movie, index, array) =>
       array.findIndex(item => String(item.id) === String(movie.id)) === index,
   );
@@ -343,6 +356,13 @@ function dashboard() {
     <span class="stat-foot">Sua opinião importa</span>\
     </div>\
     </section>
+    ${publicDashboard()}
+    <section class="panel dashboard-diary-highlight">
+      <div><span class="eyebrow">DADOS SALVOS NA NUVEM</span>
+      <h2>Diário de filmes</h2>
+      <p>Você registrou <strong>${state.diaryEntries.length}</strong> sessões no Supabase. Cadastre, edite ou exclua registros e acompanhe seu histórico.</p></div>
+      <button class="button button-secondary" data-route="diario"><i data-lucide="notebook-pen"></i> Abrir diário</button>
+    </section>
     <section class="content-section">${sectionHeader('Em destaque','Ver catálogo')}<div class="movie-grid">${list.slice(0,4).map(movieCard).join('')}</div>\
     </section>
     <section class="lower-grid">\
@@ -429,6 +449,76 @@ function catalogPage(route) {
     </button>`:''}</div>${result.length?`<div class="movie-grid movie-grid-large">${
     result.map(movieCard).join('')
   }</div>`:emptyState('Nenhum filme por aqui',route==='biblioteca'?'Adicione filmes à sua biblioteca a partir da página Explorar.':'Tente alterar os filtros ou explore o catálogo completo.',icon)}`;
+}
+
+// Dashboard público: dados obtidos em tempo real de uma API externa, sem valores inventados.
+function publicMoviesFiltered() {
+  return state.publicFilms.filter(movie =>
+    (!state.publicDecade || String(Math.floor(movie.year / 10) * 10) === state.publicDecade) &&
+    (!state.publicDirector || movie.director === state.publicDirector));
+}
+function publicDashboard() {
+  const decades = [...new Set(state.publicFilms.filter(f => f.year).map(f => Math.floor(f.year / 10) * 10))].sort((a, b) => a - b);
+  const directors = [...new Set(state.publicFilms.map(f => f.director).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  const filmCount = publicMoviesFiltered().length;
+  return `<section class="content-section public-dashboard" aria-label="Painel de dados públicos sobre cinema">
+      <div class="section-heading"><div><h2>Dados reais do cinema</h2>
+      <p class="chart-source">Fonte: <a href="https://ghibliapi.dev/" target="_blank" rel="noopener noreferrer">Studio Ghibli API</a> · ${state.publicLoading ? 'Carregando...' : state.publicError ? 'Indisponível' : `${filmCount} filmes no filtro atual`}</p></div>
+      <button class="button button-glass" id="reloadPublic" type="button" ${state.publicLoading ? 'disabled' : ''}>
+      <i data-lucide="refresh-cw"></i> Atualizar API</button></div>
+      ${state.publicError ? `<p class="data-alert" role="status">${esc(state.publicError)}. Confira sua conexão e tente novamente.</p>` : ''}
+      <div class="public-chart-toolbar" aria-label="Filtros do dashboard">
+        <label>Década
+          <select id="publicDecade"><option value="">Todas as décadas</option>${decades.map(d => `<option value="${d}" ${String(d) === state.publicDecade ? 'selected' : ''}>${d}</option>`).join('')}</select>
+        </label>
+        <label>Diretor
+          <select id="publicDirector"><option value="">Todos os diretores</option>${directors.map(d => `<option value="${esc(d)}" ${d === state.publicDirector ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
+        </label>
+        <span class="public-count">${state.publicLoading ? 'Consultando a API...' : `${filmCount} títulos (filmes)`}</span>
+      </div>
+      <div class="charts-grid public-graphs">
+        <section class="panel chart-panel"><div class="panel-heading"><div><h2>Lançamentos por década</h2><p>Eixo X: décadas · Eixo Y: quantidade de filmes</p></div></div>
+          <div class="chart-canvas"><canvas id="catalogDecadeChart" aria-label="Gráfico de barras de filmes por década"></canvas></div></section>
+        <section class="panel chart-panel"><div class="panel-heading"><div><h2>Filmes por diretor</h2><p>Fatias por diretor · Unidade: filmes</p></div></div>
+          <div class="chart-canvas"><canvas id="catalogDirectorChart" aria-label="Gráfico de rosca por diretor"></canvas></div></section>
+      </div>
+      <section class="panel chart-panel timeline-panel"><div class="panel-heading"><div><h2>Nota crítica média por década</h2><p>Eixo X: décadas · Eixo Y: pontuação Rotten Tomatoes (%)</p></div></div>
+        <div class="chart-canvas chart-short"><canvas id="catalogScoreChart" aria-label="Gráfico de linha de nota média por década"></canvas></div></section>
+      <p class="chart-source">Os dados representam lançamentos e notas informados pela API pública do Studio Ghibli. Os registros pessoais são exibidos em Estatísticas e Diário na nuvem.</p>
+    </section>`;
+}
+
+function diaryPage() {
+  const editing = state.diaryEntries.find(entry => entry.id === state.editingDiaryId);
+  const date = editing?.watched_on || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return `<div class="page-head page-head-compact"><div><div class="eyebrow"><span class="eyebrow-line"></span> CRUD REST • SUPABASE</div>
+    <h1>Diário na nuvem</h1><p>Registre filmes que assistiu. Seus registros ficam associados à sua conta e podem ser criados, consultados, editados e excluídos.</p></div></div>
+    <div class="diary-layout">
+      <section class="panel diary-form-panel"><h2>${editing ? 'Editar registro' : 'Novo registro'}</h2>
+        <form id="diaryForm" class="diary-form">
+          <label>Filme <input name="movie_title" placeholder="Qual filme você assistiu?" required maxlength="120" value="${esc(editing?.movie_title || '')}"></label>
+          <div class="diary-input-grid"><label>Data em que assistiu <input type="date" name="watched_on" required value="${esc(date)}"></label>
+            <label>Sua nota (estrelas) <select name="score" required>${[1,2,3,4,5].map(n => `<option value="${n}" ${n === (editing?.score || 5) ? 'selected' : ''}>${n} de 5</option>`).join('')}</select></label></div>
+          <label>Anotação (opcional) <textarea name="note" maxlength="700" rows="4" placeholder="O que achou do filme?">${esc(editing?.note || '')}</textarea></label>
+          <div class="diary-buttons"><button class="button button-primary" type="submit"><i data-lucide="save"></i> ${editing ? 'Salvar alterações' : 'Adicionar registro'}</button>
+            ${editing ? '<button class="button button-secondary" type="button" id="diaryCancel">Cancelar</button>' : ''}</div>
+        </form>
+        <p class="form-help">Dados armazenados no Supabase com Row Level Security (RLS), separados por usuário.</p>
+      </section>
+      <section class="panel diary-records"><div class="diary-list-top"><div><h2>Meus registros</h2><p>${state.diaryEntries.length} ${state.diaryEntries.length === 1 ? 'sessão' : 'sessões'} na nuvem</p></div>
+        <button class="icon-button" id="diaryRefresh" type="button" aria-label="Recarregar registros" title="Recarregar"><i data-lucide="refresh-cw"></i></button></div>
+        ${state.diaryLoading ? '<p class="diary-hint">Carregando registros...</p>' : ''}
+        ${state.diaryError ? `<p class="data-alert" role="alert">${esc(state.diaryError)}</p>` : ''}
+        <div class="diary-entries">${state.diaryEntries.length ? state.diaryEntries.map(entry => {
+          const watched = new Date(`${entry.watched_on}T12:00:00`);
+          return `<article class="diary-entry"><div class="diary-entry-main"><strong>${esc(entry.movie_title)}</strong>
+            <small>${Number.isNaN(watched.getTime()) ? esc(entry.watched_on) : watched.toLocaleDateString('pt-BR')} · ${Number(entry.score)}/5 estrelas</small>
+            ${entry.note ? `<p>${esc(entry.note)}</p>` : ''}</div>
+            <div class="diary-entry-actions"><button type="button" data-diary-edit="${esc(entry.id)}" aria-label="Editar ${esc(entry.movie_title)}"><i data-lucide="pencil"></i></button>
+            <button type="button" data-diary-delete="${esc(entry.id)}" aria-label="Excluir ${esc(entry.movie_title)}"><i data-lucide="trash-2"></i></button></div></article>`;
+        }).join('') : (!state.diaryLoading && !state.diaryError ? '<p class="diary-hint">Seu diário ainda está vazio. Adicione o primeiro filme no formulário.</p>' : '')}</div>
+      </section>
+    </div>`;
 }
 
 function statsPage() {
@@ -587,7 +677,7 @@ function settingsPage() {
     <div class="panel-heading">\
     <div>\
     <h2>Seus dados</h2>\
-    <p>Dados locais continuam disponíveis sem integração.</p>\
+    <p>Seus dados locais ficam neste navegador; o diário usa o Supabase com login.</p>\
     </div>\
     <span class="panel-icon">\
     <i data-lucide="database">\
@@ -605,10 +695,10 @@ function settingsPage() {
     <div class="data-row">\
     <span>\
     <i data-lucide="cloud">\
-    </i> Sincronização Back4App</span>\
-    <strong class="muted">Não configurada</strong>\
+    </i> Diário Supabase (API REST)</span>\
+    <strong class="muted">${state.diaryLoading ? 'Carregando...' : state.diaryError ? 'Verifique o SQL' : 'Ativo'}</strong>\
     </div>\
-    <p class="form-help">O adaptador de referência está em <code>biblioteca.js</code>. Configure credenciais e regras no Back4App antes de ativar.</p>\
+    <p class="form-help">Para habilitar o CRUD, execute <code>supabase/diario.sql</code> no SQL Editor do Supabase. Cada conta acessa apenas seus próprios registros.</p>\
     </section>\
     </div>`;
 }
@@ -633,6 +723,7 @@ function render() {
     favoritos: () => catalogPage('favoritos'),
     avaliacoes: () => catalogPage('avaliacoes'),
     estatisticas: statsPage,
+    diario: diaryPage,
     configuracoes: settingsPage,
   };
 
@@ -642,6 +733,8 @@ function render() {
 
   if (state.route === 'estatisticas') {
     drawCharts();
+  } else if (state.route === 'dashboard') {
+    drawPublicCharts();
   }
 }
 
@@ -702,6 +795,60 @@ function bindPageEvents() {
   }
   );
   page.querySelector('#settingsForm')?.addEventListener('submit', saveSettings);
+  page.querySelector('#publicDecade')?.addEventListener('change', event => {
+    state.publicDecade = event.target.value;
+    render();
+  });
+  page.querySelector('#publicDirector')?.addEventListener('change', event => {
+    state.publicDirector = event.target.value;
+    render();
+  });
+  page.querySelector('#reloadPublic')?.addEventListener('click', () => refreshPublicFilms());
+  page.querySelector('#diaryRefresh')?.addEventListener('click', () => refreshDiary());
+  page.querySelector('#diaryCancel')?.addEventListener('click', () => { state.editingDiaryId = null; render(); });
+  page.querySelectorAll('[data-diary-edit]').forEach(button => button.addEventListener('click', () => {
+    state.editingDiaryId = button.dataset.diaryEdit;
+    render();
+    page.querySelector('[name="movie_title"]')?.focus();
+  }));
+  page.querySelectorAll('[data-diary-delete]').forEach(button => button.addEventListener('click', async () => {
+    const item = state.diaryEntries.find(entry => entry.id === button.dataset.diaryDelete);
+    if (!item || !window.confirm(`Excluir o registro de "${item.movie_title}"?`)) return;
+    button.disabled = true;
+    try {
+      await deleteDiaryEntry(item.id);
+      if (state.editingDiaryId === item.id) state.editingDiaryId = null;
+      await refreshDiary();
+      toast('Registro excluído da nuvem');
+    } catch (error) { state.diaryError = error.message; render(); }
+  }));
+  page.querySelector('#diaryForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const fields = new FormData(form);
+    const entry = {
+      movie_title: String(fields.get('movie_title') || '').trim(),
+      watched_on: String(fields.get('watched_on') || ''),
+      score: Number(fields.get('score')),
+      note: String(fields.get('note') || '').trim(),
+    };
+    if (!entry.movie_title || entry.movie_title.length > 120 || !/^\d{4}-\d{2}-\d{2}$/.test(entry.watched_on) ||
+        !Number.isInteger(entry.score) || entry.score < 1 || entry.score > 5 || entry.note.length > 700) {
+      state.diaryError = 'Preencha corretamente os campos do registro.';
+      render();
+      return;
+    }
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      if (state.editingDiaryId) await updateDiaryEntry(state.editingDiaryId, entry);
+      else await createDiaryEntry(entry);
+      state.editingDiaryId = null;
+      await refreshDiary();
+      toast('Registro salvo no Supabase');
+    } catch (error) { state.diaryError = error.message; render(); }
+    finally { submit.disabled = false; }
+  });
   page.querySelector('#toggleKey')?.addEventListener('click', ()=> {
     const input=page.querySelector('#tmdbKey');
     input.type=input.type==='password'?'text':'password'
@@ -884,10 +1031,12 @@ function drawCharts() {
     scales: {
       x: {
         grid: { display: false },
+        title: { display: true, text: 'Ano / mês', color: '#aaaab2' },
         ticks: { color: '#777984', font: { family: 'DM Sans' } },
       },
       y: {
         beginAtZero: true,
+        title: { display: true, text: 'Quantidade de filmes', color: '#aaaab2' },
         grid: { color: 'rgba(255,255,255,.055)' },
         ticks: {
           color: '#777984',
@@ -995,6 +1144,108 @@ async function searchRemote(query) {
     toast(error.message)
   }
 }
+
+function drawPublicCharts() {
+  if (!window.Chart || !state.publicFilms.length) return;
+  const films = publicMoviesFiltered();
+  const byDecade = new Map();
+  const byDirector = new Map();
+  const scoreByDecade = new Map();
+  films.forEach(movie => {
+    if (movie.year) {
+      const key = Math.floor(movie.year / 10) * 10;
+      byDecade.set(key, (byDecade.get(key) || 0) + 1);
+      if (movie.rtScore !== null) {
+        const scores = scoreByDecade.get(key) || [];
+        scores.push(movie.rtScore);
+        scoreByDecade.set(key, scores);
+      }
+    }
+    const director = movie.director || 'Não informado';
+    byDirector.set(director, (byDirector.get(director) || 0) + 1);
+  });
+  const decades = [...byDecade.keys()].sort((a,b) => a-b);
+  const directors = [...byDirector.entries()].sort((a,b) => b[1] - a[1]);
+  const colors = ['#a78bfa','#7dd3fc','#f0abcf','#86efac','#fbbf24','#c4b5fd','#fca5a5','#67e8f9'];
+  const baseOptions = (yTitle, xTitle, max) => ({
+    responsive:true, maintainAspectRatio:false,
+    plugins: { legend:{display:false}, tooltip:{backgroundColor:'#23232e', titleColor:'#fff', bodyColor:'#d6d2e0'} },
+    scales: {
+      x:{ title:{display:true,text:xTitle,color:'#aba7b8'}, ticks:{color:'#aaa5b4'}, grid:{display:false}},
+      y:{ beginAtZero:true, ...(max ? {max} : {}), title:{display:true,text:yTitle,color:'#aba7b8'}, ticks:{color:'#aaa5b4', precision: max ? undefined : 0}, grid:{color:'rgba(255,255,255,.07)'}}
+    }
+  });
+  const yearChart = document.getElementById('catalogDecadeChart');
+  if (yearChart) chartInstances.push(new Chart(yearChart, {
+    type:'bar',
+    data:{ labels:decades.map(d => `${d}s`), datasets:[{label:'Filmes',data:decades.map(d=>byDecade.get(d)),backgroundColor:'#a78bfa',borderRadius:7,maxBarThickness:48}] },
+    options: baseOptions('Quantidade de filmes','Década de lançamento'),
+  }));
+  const directorChart = document.getElementById('catalogDirectorChart');
+  if (directorChart) chartInstances.push(new Chart(directorChart, {
+    type:'doughnut',
+    data:{labels:directors.map(d=>d[0]),datasets:[{label:'Filmes',data:directors.map(d=>d[1]),backgroundColor:directors.map((_,i)=>colors[i % colors.length]),borderWidth:0}]},
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%',plugins:{
+      legend:{position:'right',labels:{color:'#b8b2c4',font:{family:'DM Sans',size:11},usePointStyle:true,boxWidth:8}},
+      tooltip:{callbacks:{label:context => `${context.label}: ${context.parsed} filme(s)`}},
+    }},
+  }));
+  const scoreChart = document.getElementById('catalogScoreChart');
+  if (scoreChart) chartInstances.push(new Chart(scoreChart, {
+    type:'line',
+    data:{ labels:decades.map(d => `${d}s`),datasets:[{
+      label:'Nota média (%)',data:decades.map(d => {
+        const scores=scoreByDecade.get(d);
+        return scores?.length ? Number((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1)) : null;
+      }), borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.1)', pointBackgroundColor:'#d8b4fe',pointRadius:4,tension:.25,fill:true,spanGaps:false,
+    }]},
+    options:baseOptions('Pontuação média (%)','Década de lançamento',100),
+  }));
+}
+
+async function refreshPublicFilms() {
+  state.publicLoading = true;
+  state.publicError = '';
+  render();
+  try {
+    const films = await loadPublicFilms();
+    if (!films.length) throw new Error('A API não retornou filmes');
+    state.publicFilms = films;
+  } catch (error) {
+    // Não fabrica resultados: exibe a indisponibilidade e mantém o catálogo de exemplo separado.
+    state.publicError = error.message || 'Erro ao consultar os filmes públicos';
+  } finally { state.publicLoading = false; render(); }
+}
+
+async function refreshDiary() {
+  const userAtStart = getActiveUser()?.id;
+  if (!userAtStart) {
+    state.diaryEntries = [];
+    state.diaryError = '';
+    state.diaryLoading = false;
+    state.editingDiaryId = null;
+    render();
+    return;
+  }
+  state.diaryLoading = true;
+  state.diaryError = '';
+  render();
+  try {
+    const entries = await listDiaryEntries();
+    if (getActiveUser()?.id === userAtStart) state.diaryEntries = entries;
+  } catch (error) {
+    if (getActiveUser()?.id === userAtStart) state.diaryError = error.message || 'Falha ao carregar o diário';
+  } finally {
+    if (getActiveUser()?.id === userAtStart) { state.diaryLoading = false; render(); }
+  }
+}
+window.addEventListener('movie-auth-changed', () => {
+  state.diaryEntries = [];
+  state.diaryError = '';
+  state.editingDiaryId = null;
+  refreshDiary();
+});
+
 // Application startup and global events
 
 document.addEventListener('click', event=> {
@@ -1043,3 +1294,6 @@ window.addEventListener('hashchange', ()=> {
 const initial=location.hash.slice(1);
 if(routeNames[initial])state.route=initial;
 render();
+// A página inicial também traz dados reais de uma API pública sem chave.
+refreshPublicFilms();
+if (getActiveUser()) refreshDiary();
