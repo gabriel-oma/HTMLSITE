@@ -496,7 +496,14 @@ function diaryPage() {
     <div class="diary-layout">
       <section class="panel diary-form-panel"><h2>${editing ? 'Editar registro' : 'Novo registro'}</h2>
         <form id="diaryForm" class="diary-form">
-          <label>Filme <input name="movie_title" placeholder="Qual filme você assistiu?" required maxlength="120" value="${esc(editing?.movie_title || '')}"></label>
+          <label for="diaryMovieInput">Filme</label>
+          <div class="diary-movie-autocomplete">
+            <input id="diaryMovieInput" name="movie_title" type="search" placeholder="Digite o nome do filme..." required maxlength="120"
+              autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
+              aria-expanded="false" aria-controls="diaryMovieSuggestions" value="${esc(editing?.movie_title || '')}">
+            <div id="diaryMovieSuggestions" class="diary-movie-suggestions" role="listbox" aria-label="Sugestões de filmes" hidden></div>
+            <p class="diary-movie-help">Digite pelo menos 2 letras para ver sugestões. Você também pode escrever um título manualmente.</p>
+          </div>
           <div class="diary-input-grid"><label>Data em que assistiu <input type="date" name="watched_on" required value="${esc(date)}"></label>
             <label>Sua nota (estrelas) <select name="score" required>${[1,2,3,4,5].map(n => `<option value="${n}" ${n === (editing?.score || 5) ? 'selected' : ''}>${n} de 5</option>`).join('')}</select></label></div>
           <label>Anotação (opcional) <textarea name="note" maxlength="700" rows="4" placeholder="O que achou do filme?">${esc(editing?.note || '')}</textarea></label>
@@ -738,6 +745,153 @@ function render() {
   }
 }
 
+// Sugestões de filmes no Diário: catálogo público + catálogo demonstrativo,
+// com busca completa no TMDB quando o usuário cadastrou sua chave em Configurações.
+function bindDiaryMovieAutocomplete() {
+  const input = page.querySelector('#diaryMovieInput');
+  const list = page.querySelector('#diaryMovieSuggestions');
+  if (!input || !list) return;
+
+  let timer = null;
+  let requestVersion = 0;
+  let suggestions = [];
+  let activeIndex = -1;
+
+  const normalize = text => String(text || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
+
+  const localResults = query => {
+    const term = normalize(query);
+    return allMovies().filter(movie =>
+      normalize(movie.title).includes(term) || normalize(movie.original_title).includes(term)
+    ).sort((a, b) => {
+      const aStarts = normalize(a.title).startsWith(term) ? 0 : 1;
+      const bStarts = normalize(b.title).startsWith(term) ? 0 : 1;
+      return aStarts - bStarts || String(a.title).localeCompare(String(b.title), 'pt-BR');
+    }).slice(0, 8);
+  };
+
+  const close = () => {
+    list.hidden = true;
+    list.replaceChildren();
+    suggestions = [];
+    activeIndex = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  };
+
+  const setActive = index => {
+    activeIndex = index;
+    list.querySelectorAll('[role="option"]').forEach((item, i) => {
+      const selected = i === index;
+      item.setAttribute('aria-selected', String(selected));
+      item.classList.toggle('is-active', selected);
+      if (selected) item.scrollIntoView({ block: 'nearest' });
+    });
+    if (index >= 0) input.setAttribute('aria-activedescendant', `diarySuggestion${index}`);
+    else input.removeAttribute('aria-activedescendant');
+  };
+
+  const choose = index => {
+    const movie = suggestions[index];
+    if (!movie) return;
+    input.value = movie.title;
+    close();
+    input.focus();
+  };
+
+  const show = (items, status = '') => {
+    if (!input.isConnected || state.route !== 'diario') return;
+    const seen = new Set();
+    suggestions = items.filter(movie => {
+      const key = `${normalize(movie.title)}:${movie.year || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 7);
+    activeIndex = -1;
+
+    const options = suggestions.map((movie, index) => {
+      const poster = safeImage(movie.poster);
+      const source = String(movie.id).startsWith('tmdb-') ? 'TMDB' :
+        String(movie.id).startsWith('ghibli-') ? 'Studio Ghibli' : 'Catálogo';
+      return `<button type="button" id="diarySuggestion${index}" class="diary-movie-option"
+        role="option" aria-selected="false" data-diary-suggestion="${index}">
+        <span class="diary-movie-poster">${poster ? `<img src="${esc(poster)}" alt="" loading="lazy">` : '<i data-lucide="film"></i>'}</span>
+        <span class="diary-movie-info"><strong>${esc(movie.title)}</strong>
+          <small>${esc(movie.year || 'Ano não informado')} · ${esc(source)}</small></span>
+        <i data-lucide="corner-down-left" class="diary-movie-select-icon"></i>
+      </button>`;
+    }).join('');
+    list.innerHTML = options + (status ? `<p class="diary-movie-status" role="status">${esc(status)}</p>` : '');
+    list.hidden = !options && !status;
+    input.setAttribute('aria-expanded', String(!list.hidden));
+    if (!list.hidden) icons();
+  };
+
+  const search = () => {
+    clearTimeout(timer);
+    const query = input.value.trim();
+    const version = ++requestVersion;
+    if (query.length < 2) { close(); return; }
+    const local = localResults(query);
+    const key = library.apiKey();
+    if (!key) {
+      show(local, local.length ? 'Para buscar mais filmes, conecte o TMDB em Configurações.' :
+        'Nenhum título no catálogo atual. Você pode digitar o nome manualmente ou conectar o TMDB em Configurações.');
+      return;
+    }
+    show(local, 'Buscando mais filmes no TMDB...');
+    timer = setTimeout(async () => {
+      try {
+        const remote = await createTmdbClient(key).searchMovies(query);
+        if (version !== requestVersion || !input.isConnected || input.value.trim() !== query) return;
+        const merged = [...remote, ...local];
+        show(merged, merged.length ? '' : 'Nenhum filme encontrado. Você pode escrever o título manualmente.');
+      } catch (error) {
+        if (version !== requestVersion || !input.isConnected) return;
+        show(local, 'Não foi possível consultar o TMDB. Você pode digitar o título manualmente.');
+      }
+    }, 300);
+  };
+
+  input.addEventListener('input', search);
+  input.addEventListener('focus', () => { if (input.value.trim().length >= 2) search(); });
+  input.addEventListener('keydown', event => {
+    if (list.hidden || !suggestions.length) {
+      if (event.key === 'Escape') close();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActive((activeIndex + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActive(activeIndex <= 0 ? suggestions.length - 1 : activeIndex - 1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      choose(activeIndex < 0 ? 0 : activeIndex);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+    }
+  });
+  list.addEventListener('pointerdown', event => {
+    const option = event.target.closest('[data-diary-suggestion]');
+    if (!option) return;
+    event.preventDefault();
+    choose(Number(option.dataset.diarySuggestion));
+  });
+  // Clique também funciona para navegação assistiva sem pointer events.
+  list.addEventListener('click', event => {
+    const option = event.target.closest('[data-diary-suggestion]');
+    if (option) choose(Number(option.dataset.diarySuggestion));
+  });
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (!list.contains(document.activeElement)) close();
+  }, 150));
+}
+
 function bindPageEvents() {
   page.querySelectorAll('[data-route]').forEach(el=>el.addEventListener('click', ()=>setRoute(el.dataset.route)));
   page.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>openMovie(el.dataset.open)));
@@ -804,6 +958,7 @@ function bindPageEvents() {
     render();
   });
   page.querySelector('#reloadPublic')?.addEventListener('click', () => refreshPublicFilms());
+  bindDiaryMovieAutocomplete();
   page.querySelector('#diaryRefresh')?.addEventListener('click', () => refreshDiary());
   page.querySelector('#diaryCancel')?.addEventListener('click', () => { state.editingDiaryId = null; render(); });
   page.querySelectorAll('[data-diary-edit]').forEach(button => button.addEventListener('click', () => {

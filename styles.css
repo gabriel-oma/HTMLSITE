@@ -2327,3 +2327,40 @@ i[data-lucide] {
  .diary-form-panel, .diary-records { padding: 18px; }
  .public-dashboard .chart-canvas { min-height: 225px; }
 }
+
+
+/* Autocomplete do Diário: menu suspenso com pôster, ano e origem. */
+.diary-movie-autocomplete { position: relative; min-width: 0; }
+.diary-movie-autocomplete > input { width: 100%; }
+.diary-movie-help { margin: 7px 1px 0; color: #928d9f; font-size: 11px; line-height: 1.5; }
+.diary-movie-suggestions {
+  position: absolute; z-index: 80; left: 0; right: 0; top: 44px;
+  max-height: 344px; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid #514169; border-radius: 11px;
+  background: #1b1a24; box-shadow: 0 16px 38px rgba(0,0,0,.55);
+  padding: 5px;
+}
+.diary-movie-suggestions[hidden] { display: none !important; }
+.diary-movie-option {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: #f0edf6; text-align: left;
+  font: inherit; cursor: pointer;
+}
+.diary-movie-option:hover, .diary-movie-option.is-active,
+.diary-movie-option:focus-visible { background: #342941; outline: none; }
+.diary-movie-poster {
+  display: grid; place-items: center; flex: 0 0 35px;
+  width: 35px; height: 49px; border-radius: 5px;
+  background: #292434; overflow: hidden; color: #bfa9ed;
+}
+.diary-movie-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.diary-movie-poster svg { width: 17px; height: 17px; }
+.diary-movie-info { min-width: 0; flex: 1; }
+.diary-movie-info strong { display: block; font-size: 13px; font-weight: 700; line-height: 1.35; }
+.diary-movie-info small { display: block; margin-top: 4px; color: #aaa2ba; font-size: 11px; }
+.diary-movie-select-icon { width: 16px; height: 16px; flex: 0 0 16px; color: #a78bfa; }
+.diary-movie-status { margin: 3px 6px; padding: 9px 7px; font-size: 11px; color: #c5b9d7; line-height: 1.5; }
+@media (max-width: 600px) {
+  .diary-movie-suggestions { max-height: min(320px, 45vh); }
+}
